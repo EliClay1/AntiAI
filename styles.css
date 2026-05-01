@@ -1,0 +1,60 @@
+/**
+ * AntiAI - CSS Fallback Rules
+ * 
+ * These rules provide additional CSS-based filtering as a fallback
+ * to the JavaScript detection logic. Hiding is the fallback; primary
+ * removal is done via DOM manipulation in the content script.
+ */
+
+/* Hide elements with AI-related ARIA labels */
+[aria-label*="AI Overview"],
+[aria-label*="ai overview"],
+[aria-label*="AI-generated"],
+[aria-label*="Generative AI"],
+[aria-label*="Ask follow-up"],
+[aria-label*="Generate more"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide specific Google AI containers (data attributes) */
+div[data-sokoban-container*="AI"],
+div[data-sokoban-container*="GenerativeAI"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide AI Overview sections by targeting common structural patterns */
+div[role="region"] > div > div > div > div:has(> p:contains("AI Overview")) {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide elements that commonly contain AI follow-up buttons */
+button[aria-label*="Ask follow-up"],
+button[aria-label*="Generate more"],
+a[aria-label*="Ask follow-up"],
+a[aria-label*="Generate more"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Fallback: hide any elements in AI-specific containers by text matching
+   This is a conservative fallback that targets common patterns */
+div.kp-wholepage {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Hide Google's generative AI answer sections
+   These often have specific structural patterns */
+div[data-attrid*="ai"],
+div[data-attrid*="AI"] {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* Restore natural flow by removing excess margins from removed elements */
+main {
+  all: revert;
+}
