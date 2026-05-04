@@ -1,20 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "AntiAI - Remove AI from Google Search",
-  "version": "1.0.1",
-  "description": "Removes AI-generated content from Google Search.",
+  "name": "AntiAI - Block AI Overviews",
+  "version": "1.2.0",
+  "description": "Immediately removes AI Overviews, Copilot answers, Grok summaries, and all browser AI injections.",
   "icons": {
     "16": "images/icon-16.png",
     "48": "images/icon-48.png",
     "128": "images/icon-128.png"
   },
-  "host_permissions": ["https://www.google.com/*"],
   "content_scripts": [
     {
-      "matches": ["https://www.google.com/*"],
-      "js": ["content-script.js"],
-      "css": ["styles.css"],
-      "run_at": "document_start"
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_start",
+      "all_frames": true
     }
-  ]
+  ],
+
+  "permissions": []
 }

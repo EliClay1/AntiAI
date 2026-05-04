@@ -1,174 +1,402 @@
 /**
- * AntiAI - Safe + Reliable Version
+ * AntiAI - Comprehensive AI Content Blocker
+ * Covers: Google AI Overview/SGE, Bing Copilot, YouTube AI Summaries,
+ *         X/Twitter Grok, Reddit AI, LinkedIn AI, DuckDuckGo AI, and more.
+ *
+ * Strategy (layered defense):
+ *   1. CSS stylesheet injection  → instant visual hide at document_start
+ *   2. Inline style override     → secondary mask surviving partial DOM resets
+ *   3. DOM removal               → clean removal
+ *   4. StyleObserver             → re-applies inline mask if scripts un-hide
+ *   5. MutationObserver          → catches every newly injected node
+ *   6. RAF loop (first 5s)       → fights async / SPA re-renders
+ *   7. Timed passes              → belt-and-suspenders for slow loaders
  */
+(function () {
+  'use strict';
 
-const CONFIG = {
-  DEBOUNCE_DELAY: 100,
-  MAX_SCAN_TIME: 1500,
-  MAX_ELEMENTS_CHECK: 1000
-};
+  // ─── PLATFORM CSS SELECTORS ──────────────────────────────────────────────────
+  // Confirmed stable selectors sourced from live DOM analysis and scraping
+  // documentation. Grouped by platform for maintainability.
+  const SELECTORS = [
 
-const removedContainers = new WeakSet();
+    // ── Google AI Overview / SGE ─────────────────────────────────────────────
+    '.Kevs9',                            // AI Overview content wrapper (stable 2026)
+    'div.Y3BBE',                         // AI summary paragraph blocks
+    'div.Fzsovc',                        // "AI Overview" heading container
+    'div.YzCcne',                        // Alternative heading container
+    'li.jydCyd',                         // Source reference cards
+    'div.Nn35F',                         // Source title inside reference cards
+    'span.wJwe6c',                       // Inline citation badges
+    '.WTfRgd',                           // Citation badge wrapper
+    'div.e24Kx',                         // AI Overview card shell
+    '[id="m_oss_ovc"]',                  // AI Overview outer container
+    '[id="ovc"]',                        // Alternative outer container
+    '[jscontroller="ZPsNld"]',           // SGE controller root
+    '[jscontroller="cG4Tnd"]',           // Secondary SGE controller
+    '[jsname="yEVEwb"]',                 // SGE inner panel
+    '[jsname="ozXHOb"]',                 // SGE content area
+    'g-section-with-header',             // Generic Google AI section
+    '[data-content-feature="1"]',        // Content feature wrapper
+    'div.wDYxhc[data-attrid]',           // Data attribute AI elements
 
-/**
- * Strong AI signal check
- */
-function hasStrongAISignal(text) {
-  text = text.toLowerCase();
+    // Generic Google ID/class patterns
+    '[id*="ai-overview"]',
+    '[class*="ai-overview"]',
+    '[class*="AIOverview"]',
+    '[class*="ai_overview"]',
 
-  return (
-    text.includes("ai overview") ||
-    text.includes("ai-generated") ||
-    text.includes("generative ai") ||
-    text.includes("ask follow-up") ||
-    text.includes("generate more")
-  );
-}
+    // ── Bing / Copilot Search ────────────────────────────────────────────────
+    '#b_sydConvCont',                    // Bing Copilot conversation container
+    '.cib-serp-main',                    // Copilot SERP main
+    'cib-serp',                          // Copilot web component (custom element)
+    'sydney-copilot',                    // Sydney Copilot component
+    '.b_ans.b_top .b_ai_ans',            // Bing AI answer block
+    '#copilot-ans',
+    '.copilot-answers',
+    '[data-tag="copilot"]',
+    '.cib-chat-main',
+    '#b_cop',                            // Bing Copilot strip
 
-/**
- * Weak signals (used only for narrowing, not removal)
- */
-function hasWeakSignal(text) {
-  text = text.toLowerCase();
+    // ── DuckDuckGo AI ────────────────────────────────────────────────────────
+    '[data-area="answer"] [class*="AI"]',
+    '.js-ai-assist',
+    '#duckbar_static [class*="ai"]',
 
-  return (
-    text.includes("overview") ||
-    text.includes("ai")
-  );
-}
+    // ── YouTube ──────────────────────────────────────────────────────────────
+    'ytd-text-inline-expander[slot="extra-content"]',  // AI chapter summaries
+    '#clarify-box',                      // AI clarification box
+    'ytd-info-panel-content-renderer',   // AI-generated info panels
+    'ytd-player-error-message-renderer[class*="ai"]',
+    '[class*="ai-generated"][class*="ytd"]',
 
-/**
- * Detect AI elements
- */
-function detectAIElements() {
-  const results = new Set();
+    // ── X / Twitter – Grok ───────────────────────────────────────────────────
+    '[data-testid="grokAI"]',
+    '[data-testid="GrokSummary"]',
+    '[data-testid="grokShareButton"]',
+    'div[aria-label*="Grok"]',
+    '.grok-container',
+    '[href*="grok.x.com"]',             // Grok promoted link strips
 
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    null
-  );
+    // ── Reddit ───────────────────────────────────────────────────────────────
+    '[bundlename*="ai_answer"]',
+    'shreddit-async-loader[bundlename*="ai"]',
+    '[data-testid*="ai-summary"]',
+    '[data-testid*="ai-answer"]',
+    '.ai-answer-container',
 
-  let node;
-  let count = 0;
-  const start = performance.now();
+    // ── LinkedIn ─────────────────────────────────────────────────────────────
+    '[data-view-name*="ai-"]',
+    '.ai-summary-container',
+    '[class*="ai-insights"]',
+    '.artdeco-ai-banner',
 
-  while ((node = walker.nextNode()) && count < CONFIG.MAX_ELEMENTS_CHECK) {
-    if (performance.now() - start > CONFIG.MAX_SCAN_TIME) break;
+    // ── Edge Copilot sidebar ─────────────────────────────────────────────────
+    '#copilot-sidebar',
+    'iframe[src*="copilot.microsoft.com"]',
+    'iframe[src*="bing.com/chat"]',
 
-    const text = node.textContent || "";
+    // ── Generic / Cross-Platform ─────────────────────────────────────────────
+    '[class*="ai-generated"]',
+    '[class*="aiGenerated"]',
+    '[id*="ai-generated"]',
+    '[data-ai-content]',
+    '[data-ai-response]',
+    '[aria-label*="AI Overview"]',
+    '[aria-label*="Generated by AI"]',
+    '[aria-label*="AI-generated"]',
+    '[aria-label*="Copilot answer"]',
+    '[aria-label*="AI answer"]',
+  ];
 
-    if (!hasStrongAISignal(text)) {
-      count++;
-      continue;
-    }
+  // Combined selector string (used for stylesheet + querySelectorAll)
+  const SELECTOR_STRING = SELECTORS.join(',\n');
 
-    let el = node.parentElement;
-    let best = null;
+  // ─── TEXT SIGNALS ─────────────────────────────────────────────────────────
+  const STRONG_SIGNALS = [
+    'ai overview',
+    'ai-generated',
+    'generated by ai',
+    'generative ai',
+    'ask follow-up',
+    'generate more',
+    'powered by ai',
+    'ai summary',
+    'summarized by ai',
+    'written by ai',
+    'google ai',
+    'bing ai',
+    'copilot answer',
+    'grok says',
+    'grok summary',
+    'ai insights',
+    'ai response',
+    'experimental ai',
+    'ai note',
+    'ai features',
+    'note: ai',
+    'ai overview',
+    'this response was generated',
+    'response generated by ai',
+    'this answer was generated',
+  ];
 
-    while (el && !["MAIN", "BODY", "HTML"].includes(el.tagName)) {
-      const containerText = el.textContent || "";
+  // CSS classes applied inline as secondary mask
+  const MASK_STYLE = `
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+    position: absolute !important;
+    top: -9999px !important;
+  `;
 
-      if (
-        hasStrongAISignal(containerText) &&
-        !isProtectedContainer(el)
-      ) {
-        best = el;
+  // ─── TRACKING ──────────────────────────────────────────────────────────────
+  // Tracks elements we've already masked (inline style applied).
+  // We do NOT use this to skip removal — re-inserted nodes need re-processing.
+  const maskedSet = new WeakSet();
+
+  // Tracks elements that were removed — used to skip WeakRef'd ghosts.
+  const removedSet = new WeakSet();
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 1 — CSS Stylesheet Injection
+  // Runs immediately at document_start via manifest "run_at".
+  // Hides all known selectors before ANY pixel is painted.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function injectStylesheet() {
+    if (document.getElementById('__antiai_css__')) return;
+    const style = document.createElement('style');
+    style.id = '__antiai_css__';
+    style.textContent = `
+      ${SELECTOR_STRING} {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        max-height: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
       }
-
-      el = el.parentElement;
-    }
-
-    if (best) results.add(best);
-
-    count++;
+    `;
+    // Use documentElement — body doesn't exist yet at document_start
+    (document.head || document.documentElement).appendChild(style);
   }
 
-  return Array.from(results);
-}
-
-/**
- * Protect real search content
- */
-function isProtectedContainer(el) {
-  if (!el) return true;
-
-  const text = (el.textContent || "").toLowerCase();
-
-  // If it looks like real results, protect it
-  const hasSearchLinks =
-    el.querySelector('a[href*="/url?q="]') ||
-    el.querySelector("h3 a");
-
-  if (hasSearchLinks && !text.includes("ai overview")) {
-    return true;
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 2 — Inline Style Mask  (secondary protection)
+  // Applied BEFORE removal. Survives if .remove() silently fails or if the
+  // page's own JS re-inserts the element without triggering a MutationRecord.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function applyInlineMask(el) {
+    if (!el || maskedSet.has(el)) return;
+    try {
+      el.setAttribute('style', (el.getAttribute('style') || '') + ';' + MASK_STYLE);
+      el.setAttribute('data-antiai-masked', '1');
+      maskedSet.add(el);
+    } catch (_) {}
   }
 
-  // If it has lots of links, it's probably the main results
-  const linkCount = el.querySelectorAll("a").length;
-  if (linkCount > 8) return true;
-
-  return false;
-}
-
-/**
- * Remove elements
- */
-function removeAIElements() {
-  const elements = detectAIElements();
-  let removed = 0;
-
-  elements.forEach(el => {
-    if (!el || removedContainers.has(el)) return;
-
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 3 — DOM Removal
+  // Called after inline mask is already applied, so even a failed removal
+  // leaves the element visually invisible.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function removeElement(el) {
+    if (!el || removedSet.has(el)) return;
+    applyInlineMask(el);             // mask first (secondary protection)
     try {
       el.remove();
-      removedContainers.add(el);
-      removed++;
-    } catch {}
-  });
-
-  return removed;
-}
-
-/**
- * Observer
- */
-function observeDynamicContent() {
-  let timer;
-
-  const observer = new MutationObserver(() => {
-    clearTimeout(timer);
-    timer = setTimeout(() => {
-      removeAIElements();
-    }, CONFIG.DEBOUNCE_DELAY);
-  });
-
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
-}
-
-/**
- * Init
- */
-function init() {
-  const run = () => {
-    removeAIElements();
-
-    setTimeout(removeAIElements, 300);
-    setTimeout(removeAIElements, 800);
-    setTimeout(removeAIElements, 1500);
-
-    observeDynamicContent();
-  };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", run);
-  } else {
-    run();
+      removedSet.add(el);
+    } catch (_) {}
   }
-}
 
-init();
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 4 — Style Attribute Observer
+  // If a page script detects our inline mask and removes/overrides it,
+  // this re-applies it immediately.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function observeStyleOverrides() {
+    const styleObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (m.type !== 'attributes' || m.attributeName !== 'style') continue;
+        const el = m.target;
+        if (!el || !el.hasAttribute('data-antiai-masked')) continue;
+        // Re-apply mask if someone cleared our style
+        const current = el.getAttribute('style') || '';
+        if (!current.includes('antiai') && !current.includes('display: none')) {
+          applyInlineMask(el);
+        }
+      }
+    });
+
+    if (document.body) {
+      styleObserver.observe(document.body, {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: true,
+      });
+    }
+  }
+
+  // ─── SELECTOR SWEEP ────────────────────────────────────────────────────────
+  function sweepBySelectors() {
+    SELECTORS.forEach(sel => {
+      try {
+        document.querySelectorAll(sel).forEach(el => removeElement(el));
+      } catch (_) {}
+    });
+  }
+
+  // ─── TEXT-BASED DETECTION ──────────────────────────────────────────────────
+  function hasStrongSignal(text) {
+    const lower = text.toLowerCase();
+    return STRONG_SIGNALS.some(sig => lower.includes(sig));
+  }
+
+  function isProtectedContainer(el) {
+    if (!el) return true;
+    const text = (el.textContent || '').toLowerCase();
+    // Protect real results: pages with organic search links
+    if (el.querySelector('a[href*="/url?q="]') && !text.includes('ai overview')) return true;
+    if (el.querySelector('h3 a') && !text.includes('ai overview')) return true;
+    // Protect large link-rich containers (organic results)
+    if (el.querySelectorAll('a[href]').length > 10) return true;
+    return false;
+  }
+
+  function sweepByText() {
+    if (!document.body) return;
+
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      null
+    );
+
+    let node;
+    let count = 0;
+    const limit = 2000;
+    const start = performance.now();
+
+    while ((node = walker.nextNode()) && count < limit) {
+      if (performance.now() - start > 2000) break;
+
+      const text = node.textContent || '';
+      if (!hasStrongSignal(text)) { count++; continue; }
+
+      // Walk up to find the best containing element to remove
+      let el = node.parentElement;
+      let best = null;
+
+      while (el && !['MAIN', 'BODY', 'HTML'].includes(el.tagName)) {
+        if (hasStrongSignal(el.textContent || '') && !isProtectedContainer(el)) {
+          best = el;
+        }
+        el = el.parentElement;
+      }
+
+      if (best) removeElement(best);
+      count++;
+    }
+  }
+
+  // ─── FULL SCAN ─────────────────────────────────────────────────────────────
+  function fullScan() {
+    sweepBySelectors();
+    sweepByText();
+  }
+
+  // ─── PROCESS SINGLE NODE (used by MutationObserver) ────────────────────────
+  function processNode(node) {
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    // Check if node itself matches any selector
+    SELECTORS.forEach(sel => {
+      try {
+        if (node.matches(sel)) removeElement(node);
+      } catch (_) {}
+    });
+
+    // Check children of added node
+    SELECTORS.forEach(sel => {
+      try {
+        node.querySelectorAll(sel).forEach(el => removeElement(el));
+      } catch (_) {}
+    });
+
+    // Text signal check on the new subtree
+    if (hasStrongSignal(node.textContent || '') && !isProtectedContainer(node)) {
+      removeElement(node);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 5 — MutationObserver
+  // Fires on every newly added node with zero debounce.
+  // Zero delay is intentional — we want to intercept before paint.
+  // ═══════════════════════════════════════════════════════════════════════════
+  function observeDynamicContent() {
+    const observer = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        if (!m.addedNodes.length) continue;
+        m.addedNodes.forEach(processNode);
+      }
+    });
+
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LAYER 6 — requestAnimationFrame Loop
+  // Runs selector sweeps every frame for the first 5 seconds. Handles SPA
+  // navigations and progressive async rendering that MutationObserver can miss.
+  // ═══════════════════════════════════════════════════════════════════════════
+  const RAF_DURATION_MS = 5000;
+  const rafStart = performance.now();
+
+  function rafLoop() {
+    if (performance.now() - rafStart > RAF_DURATION_MS) return;
+    sweepBySelectors();
+    requestAnimationFrame(rafLoop);
+  }
+
+  // ─── INIT ──────────────────────────────────────────────────────────────────
+  // Layer 1 runs immediately (called at parse time below).
+  // Remaining layers activate as soon as DOM is available.
+
+  function initLayers() {
+    fullScan();
+    observeDynamicContent();
+    observeStyleOverrides();
+    requestAnimationFrame(rafLoop);
+
+    // Belt-and-suspenders timed passes for slow/deferred AI loaders
+    setTimeout(fullScan, 500);
+    setTimeout(fullScan, 1200);
+    setTimeout(fullScan, 2500);
+    setTimeout(fullScan, 4000);
+
+    // Final pass after full page load
+    window.addEventListener('load', fullScan, { once: true });
+  }
+
+  // Layer 1: inject CSS immediately, before body exists
+  injectStylesheet();
+
+  // Layers 2-7: need body
+  if (document.body) {
+    initLayers();
+  } else if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initLayers, { once: true });
+  } else {
+    initLayers();
+  }
+
+})();
